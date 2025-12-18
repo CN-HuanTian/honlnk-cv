@@ -8,8 +8,11 @@
 
   const expandedProjects = ref<Set<string>>(new Set())
   const expandingHeight = ref<{ [key: string]: number }>({})
+  const wordDict = ref<Record<string, boolean>>({})
+  const titleMap = ref<Record<string, boolean>>({})
+  const timerMap = ref<Record<string, number>>({})
 
-  const toggleDetails = (title: string, event: MouseEvent) => {
+  const toggleDetails = (title: string, event: MouseEvent, highlights: string[]) => {
     const card = (event.currentTarget as HTMLElement).closest('.project-card') as HTMLElement
     const details = card?.querySelector('.drawer-content') as HTMLElement
 
@@ -19,12 +22,19 @@
         expandingHeight.value[title] = details.scrollHeight
       }
       expandedProjects.value.delete(title)
+      stopAnimation(title, highlights)
+      setTimeout(() => {
+        wordDict.value={}
+        timerMap.value={}
+        titleMap.value={}
+      }, 1000);
     } else {
       // 展开时计算并设置高度
       if (details) {
         expandingHeight.value[title] = details.scrollHeight
       }
       expandedProjects.value.add(title)
+      animateHighlights(title, highlights)
     }
   }
 
@@ -33,6 +43,40 @@
       return expandingHeight.value[title] ? `${expandingHeight.value[title]}px` : 'auto'
     }
     return '0px'
+  }
+
+  async function animateHighlights(title: string, highlights: string[]) {
+    for (let rowIndex = 0; rowIndex < highlights.length; rowIndex++) {
+      const row = highlights[rowIndex]
+      const chars = row.split('')
+      // 为当前行创建所有 Promise
+      const promises = chars.map((word, wordIndex) => {
+        return new Promise(resolve => {
+          const delay = wordIndex * 10
+          const key = `${title}:${rowIndex}:${wordIndex}`
+
+          const timer = setTimeout(() => {
+            wordDict.value[key] = true
+            resolve() // 标记完成
+          }, delay)
+          timerMap.value[`${title}:${rowIndex}:${wordIndex}`] = timer
+        })
+      })
+      titleMap.value[row + rowIndex] = true
+      await Promise.all(promises)
+    }
+  }
+
+  function stopAnimation(title: string, highlights: string[]) {
+    highlights.forEach((row, rowIndex) => {
+      row.split('').forEach((_, wordIndex) => {
+        const key = `${title}:${rowIndex}:${wordIndex}`
+        if (timerMap.value[key] != undefined) {
+          clearTimeout(timerMap.value[key])
+          delete timerMap.value[key]
+        }
+      })
+    })
   }
 </script>
 
@@ -43,7 +87,7 @@
     <div
       v-for="(project, index) in projects"
       :key="project.title"
-      class="project-card"
+      class="project-card h-[500px]"
       :class="{
         'mb-4': index !== projects.length - 1,
         'before:opacity-0 after:opacity-100': expandedProjects.has(project.title),
@@ -57,7 +101,7 @@
         type: 'spring',
         stiffness: 80,
       }"
-      @click="toggleDetails(project.title, $event)"
+      @click="toggleDetails(project.title, $event, project.highlights)"
     >
       <div class="card-header flex justify-between items-center p-6 cursor-pointer">
         <div class="header-left flex-1">
@@ -85,10 +129,24 @@
             <li
               v-for="(item, index) in project.highlights"
               :key="index"
-              class="text-text-primary flex items-start"
+              class="text-text-primary flex items-center"
             >
-              <span class="text-secondary mr-2 mt-1">•</span>
-              <span>{{ item }}</span>
+              <span v-if="titleMap[item + index]" class="text-secondary mr-2 mt-1">•</span>
+              <div class="break-all flex w-full overflow-hidden flex-wrap">
+                <template v-for="(v, k) in item.split('')" :key="k">
+                  <!-- <span
+                    :style="{
+                      display: expandedProjects.has(project.title) ? 'none' : '0',
+                      animation: expandedProjects.has(project.title)
+                        ? `fadeIn 0.00001s ease-out ${k * 0.04}s forwards`
+                        : `fadeOut ease-out ${(item.length - 1 - k) * 0.04}s forwards`,
+                    }"
+                  > -->
+                  <span v-if="wordDict[`${project.title}:${index}:${k}`]">
+                    {{ v }}
+                  </span></template
+                >
+              </div>
             </li>
           </ul>
           <div class="tech-stack flex flex-wrap gap-2">
@@ -117,3 +175,16 @@
     </div>
   </section>
 </template>
+<style>
+  @keyframes fadeIn {
+    to {
+      display: block;
+      opacity: 1;
+    }
+  }
+  @keyframes fadeOut {
+    to {
+      opacity: 0;
+    }
+  }
+</style>
